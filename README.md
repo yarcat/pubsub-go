@@ -58,7 +58,7 @@ func main() {
     flag.Parse()
     // ...
 
-    ctx, cancel := context.WithCancellation(context.Background())
+    ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
 
     repo := pubsub.NewInprocess()
