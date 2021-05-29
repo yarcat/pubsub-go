@@ -87,7 +87,7 @@ func main() {
         ...
         runOtherPartsOfApp(
             NewRecv: func() ConfRecvFunc {
-                return configReceiver{confChanges.NewSubscriber().Receive
+                return configReceiver{confChanges.NewSubscriber()}.Receive
             },
             ...,
         }.Run(ctx)
