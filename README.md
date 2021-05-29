@@ -66,20 +66,31 @@ func main() {
     wg.Add(1)
     go func() {
         defer wg.Done()
-        fileWatcher(ctx, *cfg, fileContentSender{fileChanges})
+        fileWatcher{
+            Path: *cfg,
+            Send: fileContentSender{fileChanges}).Send,
+        }.Run(ctx)
     }()
 
     confChanges := pubsub.NewTopic(repo)
     wg.Add(1)
     go func() {
         defer wg.Done()
-        confWatcher(ctx, fileContentReceiver{fileChanges.NewSubscriber()}, configSender{confChanges})
+        confWatcher{
+            Recv: fileContentReceiver{fileChanges.NewSubscriber()}.Receive,
+            Send: configSender{confChanges}).Send,
+        }.Run(ctx)
     }()
 
     wg.Add(...)
     go func() {
         ...
-        runOtherPartsOfApp(ctx, configReceiver{confChanges.NewSubscriber(), ...)
+        runOtherPartsOfApp(
+            NewRecv: func() ConfRecvFunc {
+                return configReceiver{confChanges.NewSubscriber().Receive
+            },
+            ...,
+        }.Run(ctx)
     }()
 
     waitForExitCondition(cancel)
