@@ -14,9 +14,9 @@ First we define typed helpers:
 
 ```go
 func receive(ctx context.Context, sub pubsub.Subscription) (v interface{}, ok bool, err error) {
-	v, err = sub.Receive(ctx)
-	ok = err != pubsub.ErrTopicClosed
-	return v, ok, err
+    v, err = sub.Receive(ctx)
+    ok = err != pubsub.ErrTopicClosed
+    return v, ok, err
 }
 
 type (
@@ -26,9 +26,9 @@ type (
 
 func (sender fileContentSender) Send(b []byte) { sender.topic.Publish(b) }
 func (receiver fileContentReceiver) Receive(ctx context.Context, b *[]byte, e *error) bool {
-	v, ok, err := receive(ctx, receiver.sub)
-	*b, *e = v.([]byte), err
-	return ok
+    v, ok, err := receive(ctx, receiver.sub)
+    *b, *e = v.([]byte), err
+    return ok
 }
 
 type (
@@ -38,9 +38,9 @@ type (
 
 func (sender configSender) Send(cfg Configuration) { sender.topic.Publish(cfg) }
 func (receiver configReceiver) Receive(ctx context.Context, c *Config, e *error) bool {
-	v, ok, err := receive(ctx, receiver, sub)
-	*c, *e = v.(Config), err
-	return ok
+    v, ok, err := receive(ctx, receiver, sub)
+    *c, *e = v.(Config), err
+    return ok
 }
 ```
 
@@ -56,8 +56,8 @@ func main() {
 
     ctx, cancel := context.WithCancel(context.Background())
 
-	// Listen to file-system changes (probably using fsnotify), publishes to the
-	// file change topic.
+    // Listen to file-system changes (probably using fsnotify), publishes to the
+    // file change topic.
 
     fileChanges := pubsub.CreateTopic(repo)
     wg.Add(1)
@@ -69,8 +69,8 @@ func main() {
         }.Run(ctx)
     }()
 
-	// Subscribe to configuration bytes updates, parse into Configuration
-	// structure, publish new Configuration if changed.
+    // Subscribe to configuration bytes updates, parse into Configuration
+    // structure, publish new Configuration if changed.
 
     confChanges := pubsub.CreateTopic(repo)
     wg.Add(1)
@@ -82,19 +82,19 @@ func main() {
         }.Run(ctx)
     }()
 
-	// All other application related things go here.
+    // All other application related things go here.
 
-	App{
-		PubSub:          repo,
-		NewConfReceiver: func() configReceiver {
-			return configReceiver{pubsub.Subscribe(confChanges)}
-		},
-		...
-	}.Run()
+    App{
+        PubSub:          repo,
+        NewConfReceiver: func() configReceiver {
+            return configReceiver{pubsub.Subscribe(confChanges)}
+        },
+        ...
+    }.Run()
 
-	// And try to shutdown gracefully.
+    // And try to shutdown gracefully.
 
-	cancel()
-	BlockOn(wg.Wait).ForMaxOf(shutdownTimeout)
+    cancel()
+    BlockOn(wg.Wait).ForMaxOf(shutdownTimeout)
 }
 ```
