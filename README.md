@@ -13,40 +13,34 @@ Let's imagine, our application wants to send configuration updates:
 First we define typed helpers:
 
 ```go
+func receive(ctx context.Context, sub pubsub.Subscription) (v interface{}, ok bool, err error) {
+	v, err = sub.Receive(ctx)
+	ok = err != pubsub.ErrTopicClosed
+	return v, ok, err
+}
+
 type (
-    fileContentSender   struct { topic pubsub.Topic }
-    fileContentReceiver struct { sub pubsub.Subscriber }
+    fileContentSender   struct { pub pubsub.Publisher }
+    fileContentReceiver struct { sub pubsub.Subscription }
 )
 
 func (sender fileContentSender) Send(b []byte) { sender.topic.Publish(b) }
 func (receiver fileContentReceiver) Receive(ctx context.Context, b *[]byte, e *error) bool {
-    switch buf, err := receiver.sub.Receive(ctx); {
-    case errors.Is(err, pubsub.ErrTopicClosed):
-        return false
-    case err != nil:
-        *e = err
-    default:
-        *b = buf.([]byte)
-    }
-    return true
+	v, ok, err := receive(ctx, receiver.sub)
+	*b, *e = v.([]byte), err
+	return ok
 }
 
 type (
-    configSender   struct { topic pubsub.Topic }
-    configReceiver struct { sub pubsub.Subscriber }
+    configSender   struct { topic pubsub.Publisher }
+    configReceiver struct { sub pubsub.Subscription }
 )
 
 func (sender configSender) Send(cfg Configuration) { sender.topic.Publish(cfg) }
 func (receiver configReceiver) Receive(ctx context.Context, c *Config, e *error) bool {
-    switch cfg, err := receiver.sub.Receive(ctx); {
-    case errors.Is(err, pubsub.ErrTopicClosed):
-        return false
-    case err != nil:
-        *e = err
-    default:
-        *c = cfg.(Config)
-    }
-    return true
+	v, ok, err := receive(ctx, receiver, sub)
+	*c, *e = v.(Config), err
+	return ok
 }
 ```
 
@@ -58,42 +52,49 @@ func main() {
     flag.Parse()
     // ...
 
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
-
     repo := pubsub.NewInprocess()
-    fileChanges := pubsub.NewTopic(repo)
+
+    ctx, cancel := context.WithCancel(context.Background())
+
+	// Listen to file-system changes (probably using fsnotify), publishes to the
+	// file change topic.
+
+    fileChanges := pubsub.CreateTopic(repo)
     wg.Add(1)
     go func() {
         defer wg.Done()
         fileWatcher{
             Path: *cfg,
-            Send: fileContentSender{fileChanges}).Send,
+            Send: fileContentSender{pubsub.NewPublisher(fileChanges)}).Send,
         }.Run(ctx)
     }()
 
-    confChanges := pubsub.NewTopic(repo)
+	// Subscribe to configuration bytes updates, parse into Configuration
+	// structure, publish new Configuration if changed.
+
+    confChanges := pubsub.CreateTopic(repo)
     wg.Add(1)
     go func() {
         defer wg.Done()
-        confWatcher{
-            Recv: fileContentReceiver{fileChanges.NewSubscriber()}.Receive,
-            Send: configSender{confChanges}).Send,
+        configurationRepository{
+            Recv: fileContentReceiver{pubsub.Subscribe(confChanges)}.Receive,
+            Send: configSender{pubsub.NewPublisher(confChanges)}).Send,
         }.Run(ctx)
     }()
 
-    wg.Add(...)
-    go func() {
-        ...
-        runOtherPartsOfApp(
-            NewRecv: func() ConfRecvFunc {
-                return configReceiver{confChanges.NewSubscriber()}.Receive
-            },
-            ...,
-        }.Run(ctx)
-    }()
+	// All other application related things go here.
 
-    waitForExitCondition(cancel)
-    wg.Wait()
+	App{
+		PubSub:          repo,
+		NewConfReceiver: func() configReceiver {
+			return configReceiver{pubsub.Subscribe(confChanges)}
+		},
+		...
+	}.Run()
+
+	// And try to shutdown gracefully.
+
+	cancel()
+	BlockOn(wg.Wait).ForMaxOf(shutdownTimeout)
 }
 ```
