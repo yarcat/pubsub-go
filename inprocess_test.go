@@ -40,7 +40,7 @@ func TestLocalBackend(t *testing.T) {
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			be := pubsub.NewInprocess()
-			ts := newTopics(tc.topics, be)
+			ts := createTopics(tc.topics, be)
 			subs := newSubs(t, tc.topics, ts, tc.subs)
 			sendMessages(t, ts, tc.msgs)
 			got := receiveAll(t, ts, subs)
@@ -51,9 +51,9 @@ func TestLocalBackend(t *testing.T) {
 	}
 }
 
-func receiveAll(t *testing.T, ts []pubsub.Topic,
-	subs map[pubsub.Topic][]pubsub.Subscriber,
-) string {
+type topicSubs map[pubsub.Topic][]pubsub.Subscription
+
+func receiveAll(t *testing.T, ts []pubsub.Topic, subs topicSubs) string {
 	var b strings.Builder
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -66,7 +66,7 @@ func receiveAll(t *testing.T, ts []pubsub.Topic,
 }
 
 func receiveOne(ctx context.Context, t *testing.T,
-	s pubsub.Subscriber, topicNo, subNo int, b *strings.Builder,
+	s pubsub.Subscription, topicNo, subNo int, b *strings.Builder,
 ) {
 	for {
 		data, err := s.Receive(ctx)
@@ -89,8 +89,9 @@ func receiveOne(ctx context.Context, t *testing.T,
 
 func sendMessages(t *testing.T, ts []pubsub.Topic, messages []string) {
 	for i, topic := range ts {
+		pub := pubsub.NewPublisher(topic)
 		for _, m := range messages {
-			err := topic.Publish(fmt.Sprintf("%02d-%s", i, m))
+			err := pub.Publish(fmt.Sprintf("%02d-%s", i, m))
 			if err != nil {
 				t.Errorf("topic#%02d.Publish() err = %v, want = nil",
 					i, err)
@@ -103,14 +104,13 @@ func sendMessages(t *testing.T, ts []pubsub.Topic, messages []string) {
 	}
 }
 
-func newSubs(t *testing.T, topics int, ts []pubsub.Topic, subscribers int,
-) map[pubsub.Topic][]pubsub.Subscriber {
-	subs := make(map[pubsub.Topic][]pubsub.Subscriber, topics)
+func newSubs(t *testing.T, topics int, ts []pubsub.Topic, subscribers int) topicSubs {
+	subs := make(topicSubs, topics)
 	for _, topic := range ts {
 		for i := 0; i < subscribers; i++ {
-			sub, err := topic.NewSubscriber()
+			sub, err := pubsub.Subscribe(topic)
 			if err != nil {
-				t.Fatalf("NewSubscriber() err = %v, want = nil", err)
+				t.Fatalf("Subscribe() err = %v, want = nil", err)
 			}
 			subs[topic] = append(subs[topic], sub)
 		}
@@ -118,10 +118,10 @@ func newSubs(t *testing.T, topics int, ts []pubsub.Topic, subscribers int,
 	return subs
 }
 
-func newTopics(topics int, be pubsub.Inprocess) []pubsub.Topic {
+func createTopics(topics int, be pubsub.Inprocess) []pubsub.Topic {
 	var ts []pubsub.Topic
 	for i := 0; i < topics; i++ {
-		ts = append(ts, pubsub.NewTopic(be))
+		ts = append(ts, pubsub.CreateTopic(be))
 	}
 	return ts
 }
